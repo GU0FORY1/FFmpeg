@@ -15,13 +15,10 @@ function ffmpeg_run(opts, cb) {
       FS.createFolder('/', outputDir.slice(1), true, true);
 
       FS.mount(WORKERFS, { files: Module['files'] }, inputDir);
-
-      console.log('root', FS.analyzePath('/'))
     }
   };
 
   Module['postRun'] = function() {
-    console.log('root', FS.analyzePath('/'))
     var handle = FS.analyzePath(Module['outputDir']);
     Module['return'] = getAllBuffers(handle);
     cb(Module['return']);
