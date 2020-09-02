@@ -79,7 +79,7 @@ static int test_with_mode_symmetric(void)
     operands[1].data = NULL;
 
     input_indexes[0] = 0;
-    dnn_execute_layer_pad(operands, input_indexes, 1, &params);
+    dnn_execute_layer_pad(operands, input_indexes, 1, &params, NULL);
 
     output = operands[1].data;
     for (int i = 0; i < sizeof(expected_output) / sizeof(float); i++) {
@@ -144,7 +144,7 @@ static int test_with_mode_reflect(void)
     operands[1].data = NULL;
 
     input_indexes[0] = 0;
-    dnn_execute_layer_pad(operands, input_indexes, 1, &params);
+    dnn_execute_layer_pad(operands, input_indexes, 1, &params, NULL);
 
     output = operands[1].data;
     for (int i = 0; i < sizeof(expected_output) / sizeof(float); i++) {
@@ -203,14 +203,14 @@ static int test_with_mode_constant(void)
     params.paddings[3][1] = 2;
 
     operands[0].data = input;
-    operands[0].dims[0] = 3;
+    operands[0].dims[0] = 1;
     operands[0].dims[1] = 2;
     operands[0].dims[2] = 2;
     operands[0].dims[3] = 3;
     operands[1].data = NULL;
 
     input_indexes[0] = 0;
-    dnn_execute_layer_pad(operands, input_indexes, 1, &params);
+    dnn_execute_layer_pad(operands, input_indexes, 1, &params, NULL);
 
     output = operands[1].data;
     for (int i = 0; i < sizeof(expected_output) / sizeof(float); i++) {

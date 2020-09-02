@@ -72,58 +72,6 @@ int ff_qsv_codec_id_to_mfx(enum AVCodecID codec_id)
     return AVERROR(ENOSYS);
 }
 
-
-static const struct {
-    enum AVCodecID codec_id;
-    int codec_profile;
-    int mfx_profile;
-} qsv_profile_map[] = {
-#define MAP(c, p, v) { AV_CODEC_ID_ ## c, FF_PROFILE_ ## p, MFX_PROFILE_ ## v }
-    MAP(MPEG2VIDEO,  MPEG2_SIMPLE,    MPEG2_SIMPLE ),
-    MAP(MPEG2VIDEO,  MPEG2_MAIN,      MPEG2_MAIN   ),
-    MAP(MPEG2VIDEO,  MPEG2_HIGH,      MPEG2_HIGH   ),
-
-    MAP(H264,        H264_BASELINE,   AVC_BASELINE ),
-    MAP(H264,        H264_CONSTRAINED_BASELINE, AVC_BASELINE),
-#if QSV_VERSION_ATLEAST(1, 3)
-    MAP(H264,        H264_EXTENDED,   AVC_EXTENDED ),
-#endif
-    MAP(H264,        H264_MAIN,       AVC_MAIN     ),
-    MAP(H264,        H264_HIGH,       AVC_HIGH     ),
-    MAP(H264,        H264_HIGH_422,   AVC_HIGH_422 ),
-
-#if QSV_VERSION_ATLEAST(1, 8)
-    MAP(HEVC,        HEVC_MAIN,       HEVC_MAIN    ),
-    MAP(HEVC,        HEVC_MAIN_10,    HEVC_MAIN10  ),
-    MAP(HEVC,        HEVC_MAIN_STILL_PICTURE,    HEVC_MAINSP ),
-#endif
-#if QSV_VERSION_ATLEAST(1, 16)
-    MAP(HEVC,        HEVC_REXT,       HEVC_REXT    ),
-#endif
-
-    MAP(VC1,         VC1_SIMPLE,      VC1_SIMPLE   ),
-    MAP(VC1,         VC1_MAIN,        VC1_MAIN     ),
-    MAP(VC1,         VC1_COMPLEX,     VC1_ADVANCED ),
-    MAP(VC1,         VC1_ADVANCED,    VC1_ADVANCED ),
-#undef MAP
-};
-
-int ff_qsv_profile_to_mfx(enum AVCodecID codec_id, int profile)
-{
-    int i;
-    if (profile == FF_PROFILE_UNKNOWN)
-        return MFX_PROFILE_UNKNOWN;
-
-    for (i = 0; i < FF_ARRAY_ELEMS(qsv_profile_map); i++) {
-        if (qsv_profile_map[i].codec_id != codec_id)
-            continue;
-        if (qsv_profile_map[i].codec_profile == profile)
-            return qsv_profile_map[i].mfx_profile;
-    }
-
-    return MFX_PROFILE_UNKNOWN;
-}
-
 int ff_qsv_level_to_mfx(enum AVCodecID codec_id, int level)
 {
     if (level == FF_LEVEL_UNKNOWN)
@@ -247,6 +195,12 @@ enum AVPixelFormat ff_qsv_map_fourcc(uint32_t fourcc)
     case MFX_FOURCC_NV12: return AV_PIX_FMT_NV12;
     case MFX_FOURCC_P010: return AV_PIX_FMT_P010;
     case MFX_FOURCC_P8:   return AV_PIX_FMT_PAL8;
+#if CONFIG_VAAPI
+    case MFX_FOURCC_YUY2: return AV_PIX_FMT_YUYV422;
+#if QSV_VERSION_ATLEAST(1, 27)
+    case MFX_FOURCC_Y210: return AV_PIX_FMT_Y210;
+#endif
+#endif
     }
     return AV_PIX_FMT_NONE;
 }
@@ -263,6 +217,18 @@ int ff_qsv_map_pixfmt(enum AVPixelFormat format, uint32_t *fourcc)
     case AV_PIX_FMT_P010:
         *fourcc = MFX_FOURCC_P010;
         return AV_PIX_FMT_P010;
+#if CONFIG_VAAPI
+    case AV_PIX_FMT_YUV422P:
+    case AV_PIX_FMT_YUYV422:
+        *fourcc = MFX_FOURCC_YUY2;
+        return AV_PIX_FMT_YUYV422;
+#if QSV_VERSION_ATLEAST(1, 27)
+    case AV_PIX_FMT_YUV422P10:
+    case AV_PIX_FMT_Y210:
+        *fourcc = MFX_FOURCC_Y210;
+        return AV_PIX_FMT_Y210;
+#endif
+#endif
     default:
         return AVERROR(ENOSYS);
     }
@@ -412,15 +378,21 @@ static int ff_qsv_set_display_handle(AVCodecContext *avctx, QSVSession *qs)
 #endif //AVCODEC_QSV_LINUX_SESSION_HANDLE
 
 int ff_qsv_init_internal_session(AVCodecContext *avctx, QSVSession *qs,
-                                 const char *load_plugins)
+                                 const char *load_plugins, int gpu_copy)
 {
-    mfxIMPL impl   = MFX_IMPL_AUTO_ANY;
-    mfxVersion ver = { { QSV_VERSION_MINOR, QSV_VERSION_MAJOR } };
+    mfxIMPL          impl = MFX_IMPL_AUTO_ANY;
+    mfxVersion        ver = { { QSV_VERSION_MINOR, QSV_VERSION_MAJOR } };
+    mfxInitParam init_par = { MFX_IMPL_AUTO_ANY };
 
     const char *desc;
     int ret;
 
-    ret = MFXInit(impl, &ver, &qs->session);
+#if QSV_VERSION_ATLEAST(1, 16)
+    init_par.GPUCopy        = gpu_copy;
+#endif
+    init_par.Implementation = impl;
+    init_par.Version        = ver;
+    ret = MFXInitEx(init_par, &qs->session);
     if (ret < 0)
         return ff_qsv_print_error(avctx, ret,
                                   "Error initializing an internal MFX session");
@@ -712,7 +684,8 @@ static mfxStatus qsv_frame_get_hdl(mfxHDL pthis, mfxMemId mid, mfxHDL *hdl)
 }
 
 int ff_qsv_init_session_device(AVCodecContext *avctx, mfxSession *psession,
-                               AVBufferRef *device_ref, const char *load_plugins)
+                               AVBufferRef *device_ref, const char *load_plugins,
+                               int gpu_copy)
 {
     static const mfxHandleType handle_types[] = {
         MFX_HANDLE_VA_DISPLAY,
@@ -722,11 +695,12 @@ int ff_qsv_init_session_device(AVCodecContext *avctx, mfxSession *psession,
     AVHWDeviceContext    *device_ctx = (AVHWDeviceContext*)device_ref->data;
     AVQSVDeviceContext *device_hwctx = device_ctx->hwctx;
     mfxSession        parent_session = device_hwctx->session;
+    mfxInitParam            init_par = { MFX_IMPL_AUTO_ANY };
+    mfxHDL                    handle = NULL;
 
     mfxSession    session;
     mfxVersion    ver;
     mfxIMPL       impl;
-    mfxHDL        handle = NULL;
     mfxHandleType handle_type;
     mfxStatus err;
 
@@ -752,7 +726,12 @@ int ff_qsv_init_session_device(AVCodecContext *avctx, mfxSession *psession,
                "from the session\n");
     }
 
-    err = MFXInit(impl, &ver, &session);
+#if QSV_VERSION_ATLEAST(1, 16)
+    init_par.GPUCopy        = gpu_copy;
+#endif
+    init_par.Implementation = impl;
+    init_par.Version        = ver;
+    err = MFXInitEx(init_par, &session);
     if (err != MFX_ERR_NONE)
         return ff_qsv_print_error(avctx, err,
                                   "Error initializing a child MFX session");
@@ -783,7 +762,7 @@ int ff_qsv_init_session_device(AVCodecContext *avctx, mfxSession *psession,
 
 int ff_qsv_init_session_frames(AVCodecContext *avctx, mfxSession *psession,
                                QSVFramesContext *qsv_frames_ctx,
-                               const char *load_plugins, int opaque)
+                               const char *load_plugins, int opaque, int gpu_copy)
 {
     mfxFrameAllocator frame_allocator = {
         .pthis  = qsv_frames_ctx,
@@ -803,7 +782,7 @@ int ff_qsv_init_session_frames(AVCodecContext *avctx, mfxSession *psession,
     int ret;
 
     ret = ff_qsv_init_session_device(avctx, &session,
-                                     frames_ctx->device_ref, load_plugins);
+                                     frames_ctx->device_ref, load_plugins, gpu_copy);
     if (ret < 0)
         return ret;
 
@@ -835,9 +814,7 @@ int ff_qsv_close_internal_session(QSVSession *qs)
         qs->session = NULL;
     }
 #ifdef AVCODEC_QSV_LINUX_SESSION_HANDLE
-    if (qs->va_device_ctx) {
-        qs->va_device_ctx->free(qs->va_device_ctx);
-    }
+    av_buffer_unref(&qs->va_device_ref);
 #endif
     return 0;
 }

@@ -192,37 +192,23 @@ static av_cold int init(AVFilterContext *ctx)
     int ret;
 
     pad = (AVFilterPad){
-        .name         = av_strdup("out0"),
+        .name         = "out0",
         .type         = AVMEDIA_TYPE_AUDIO,
     };
 
-    if (!pad.name)
-        return AVERROR(ENOMEM);
+    ret = ff_insert_outpad(ctx, 0, &pad);
+    if (ret < 0)
+        return ret;
 
     if (s->draw_curves) {
         vpad = (AVFilterPad){
-            .name         = av_strdup("out1"),
+            .name         = "out1",
             .type         = AVMEDIA_TYPE_VIDEO,
             .config_props = config_video,
         };
-        if (!vpad.name) {
-            av_freep(&pad.name);
-            return AVERROR(ENOMEM);
-        }
-    }
-
-    ret = ff_insert_outpad(ctx, 0, &pad);
-    if (ret < 0) {
-        av_freep(&pad.name);
-        return ret;
-    }
-
-    if (s->draw_curves) {
         ret = ff_insert_outpad(ctx, 1, &vpad);
-        if (ret < 0) {
-            av_freep(&vpad.name);
+        if (ret < 0)
             return ret;
-        }
     }
 
     return 0;
@@ -271,8 +257,6 @@ static av_cold void uninit(AVFilterContext *ctx)
 {
     AudioNEqualizerContext *s = ctx->priv;
 
-    for (int i = 0; i < ctx->nb_outputs; i++)
-        av_freep(&ctx->output_pads[i].name);
     av_frame_free(&s->video);
     av_freep(&s->filters);
     s->nb_filters = 0;
@@ -566,7 +550,7 @@ static void equalizer(EqualizatorFilter *f, double sample_rate)
 static int add_filter(AudioNEqualizerContext *s, AVFilterLink *inlink)
 {
     equalizer(&s->filters[s->nb_filters], inlink->sample_rate);
-    if (s->nb_filters >= s->nb_allocated) {
+    if (s->nb_filters >= s->nb_allocated - 1) {
         EqualizatorFilter *filters;
 
         filters = av_calloc(s->nb_allocated, 2 * sizeof(*s->filters));
@@ -733,13 +717,18 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *buf)
     }
 
     if (s->draw_curves) {
+        AVFrame *clone;
+
         const int64_t pts = buf->pts +
             av_rescale_q(buf->nb_samples, (AVRational){ 1, inlink->sample_rate },
                          outlink->time_base);
         int ret;
 
         s->video->pts = pts;
-        ret = ff_filter_frame(ctx->outputs[1], av_frame_clone(s->video));
+        clone = av_frame_clone(s->video);
+        if (!clone)
+            return AVERROR(ENOMEM);
+        ret = ff_filter_frame(ctx->outputs[1], clone);
         if (ret < 0)
             return ret;
     }

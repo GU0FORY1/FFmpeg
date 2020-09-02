@@ -213,8 +213,13 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
     }
 
     if (s->do_video) {
+        AVFrame *clone;
+
         s->out->pts = in->pts;
-        ff_filter_frame(outlink, av_frame_clone(s->out));
+        clone = av_frame_clone(s->out);
+        if (!clone)
+            return AVERROR(ENOMEM);
+        ff_filter_frame(outlink, clone);
     }
     return ff_filter_frame(aoutlink, in);
 }
@@ -222,11 +227,8 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
 static av_cold void uninit(AVFilterContext *ctx)
 {
     AudioPhaseMeterContext *s = ctx->priv;
-    int i;
 
     av_frame_free(&s->out);
-    for (i = 0; i < ctx->nb_outputs; i++)
-        av_freep(&ctx->output_pads[i].name);
 }
 
 static av_cold int init(AVFilterContext *ctx)
@@ -236,30 +238,22 @@ static av_cold int init(AVFilterContext *ctx)
     int ret;
 
     pad = (AVFilterPad){
-        .name         = av_strdup("out0"),
+        .name         = "out0",
         .type         = AVMEDIA_TYPE_AUDIO,
     };
-    if (!pad.name)
-        return AVERROR(ENOMEM);
     ret = ff_insert_outpad(ctx, 0, &pad);
-    if (ret < 0) {
-        av_freep(&pad.name);
+    if (ret < 0)
         return ret;
-    }
 
     if (s->do_video) {
         pad = (AVFilterPad){
-            .name         = av_strdup("out1"),
+            .name         = "out1",
             .type         = AVMEDIA_TYPE_VIDEO,
             .config_props = config_video_output,
         };
-        if (!pad.name)
-            return AVERROR(ENOMEM);
         ret = ff_insert_outpad(ctx, 1, &pad);
-        if (ret < 0) {
-            av_freep(&pad.name);
+        if (ret < 0)
             return ret;
-        }
     }
 
     return 0;

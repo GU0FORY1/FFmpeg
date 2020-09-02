@@ -97,6 +97,7 @@ static int test_with_same_dilate(void)
     float bias[2] = { -1.6574852, -0.72915393 };
 
     params.activation = TANH;
+    params.has_bias = 1;
     params.biases = bias;
     params.dilation = 2;
     params.input_num = 3;
@@ -113,7 +114,7 @@ static int test_with_same_dilate(void)
     operands[1].data = NULL;
 
     input_indexes[0] = 0;
-    convolve(operands, input_indexes, 1, &params);
+    dnn_execute_layer_conv2d(operands, input_indexes, 1, &params, NULL);
 
     output = operands[1].data;
     for (int i = 0; i < sizeof(expected_output) / sizeof(float); i++) {
@@ -196,6 +197,7 @@ static int test_with_valid(void)
     float bias[2] = { -0.4773722, -0.19620377 };
 
     params.activation = TANH;
+    params.has_bias = 1;
     params.biases = bias;
     params.dilation = 1;
     params.input_num = 3;
@@ -212,7 +214,7 @@ static int test_with_valid(void)
     operands[1].data = NULL;
 
     input_indexes[0] = 0;
-    convolve(operands, input_indexes, 1, &params);
+    dnn_execute_layer_conv2d(operands, input_indexes, 1, &params, NULL);
 
     output = operands[1].data;
     for (int i = 0; i < sizeof(expected_output) / sizeof(float); i++) {

@@ -302,9 +302,13 @@ av_cold static int lavfi_read_header(AVFormatContext *avctx)
 
     if (lavfi->dump_graph) {
         char *dump = avfilter_graph_dump(lavfi->graph, lavfi->dump_graph);
-        fputs(dump, stderr);
-        fflush(stderr);
-        av_free(dump);
+        if (dump != NULL) {
+            fputs(dump, stderr);
+            fflush(stderr);
+            av_free(dump);
+        } else {
+            FAIL(AVERROR(ENOMEM));
+        }
     }
 
     /* fill each stream with the information in the corresponding sink */
@@ -358,16 +362,12 @@ static int create_subcc_packet(AVFormatContext *avctx, AVFrame *frame,
 {
     LavfiContext *lavfi = avctx->priv_data;
     AVFrameSideData *sd;
-    int stream_idx, i, ret;
+    int stream_idx, ret;
 
     if ((stream_idx = lavfi->sink_stream_subcc_map[sink_idx]) < 0)
         return 0;
-    for (i = 0; i < frame->nb_side_data; i++)
-        if (frame->side_data[i]->type == AV_FRAME_DATA_A53_CC)
-            break;
-    if (i >= frame->nb_side_data)
+    if (!(sd = av_frame_get_side_data(frame, AV_FRAME_DATA_A53_CC)))
         return 0;
-    sd = frame->side_data[i];
     if ((ret = av_new_packet(&lavfi->subcc_packet, sd->size)) < 0)
         return ret;
     memcpy(lavfi->subcc_packet.data, sd->data, sd->size);
@@ -388,10 +388,7 @@ static int lavfi_read_packet(AVFormatContext *avctx, AVPacket *pkt)
     int size = 0;
 
     if (lavfi->subcc_packet.size) {
-        *pkt = lavfi->subcc_packet;
-        av_init_packet(&lavfi->subcc_packet);
-        lavfi->subcc_packet.size = 0;
-        lavfi->subcc_packet.data = NULL;
+        av_packet_move_ref(pkt, &lavfi->subcc_packet);
         return pkt->size;
     }
 
@@ -477,7 +474,6 @@ static int lavfi_read_packet(AVFormatContext *avctx, AVPacket *pkt)
     pkt->stream_index = stream_idx;
     pkt->pts = frame->pts;
     pkt->pos = frame->pkt_pos;
-    pkt->size = size;
     av_frame_unref(frame);
     return size;
 }

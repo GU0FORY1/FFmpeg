@@ -111,10 +111,11 @@
         uint32_t val_lw_m;                           \
                                                      \
         __asm__ volatile (                           \
-            "ulw  %[val_lw_m],  %[psrc_lw_m]  \n\t"  \
+            "lwr %[val_lw_m], 0(%[psrc_lw_m]) \n\t"  \
+            "lwl %[val_lw_m], 3(%[psrc_lw_m]) \n\t"  \
                                                      \
-            : [val_lw_m] "=r" (val_lw_m)             \
-            : [psrc_lw_m] "m" (*psrc_lw_m)           \
+            : [val_lw_m] "=&r"(val_lw_m)             \
+            : [psrc_lw_m] "r"(psrc_lw_m)             \
         );                                           \
                                                      \
         val_lw_m;                                    \
@@ -127,10 +128,11 @@
             uint64_t val_ld_m = 0;                       \
                                                          \
             __asm__ volatile (                           \
-                "uld  %[val_ld_m],  %[psrc_ld_m]  \n\t"  \
+                "ldr %[val_ld_m], 0(%[psrc_ld_m]) \n\t"  \
+                "ldl %[val_ld_m], 7(%[psrc_ld_m]) \n\t"  \
                                                          \
-                : [val_ld_m] "=r" (val_ld_m)             \
-                : [psrc_ld_m] "m" (*psrc_ld_m)           \
+                : [val_ld_m] "=&r" (val_ld_m)            \
+                : [psrc_ld_m] "r" (psrc_ld_m)            \
             );                                           \
                                                          \
             val_ld_m;                                    \
@@ -299,6 +301,7 @@
 #define LD_SB4(...) LD_V4(v16i8, __VA_ARGS__)
 #define LD_UH4(...) LD_V4(v8u16, __VA_ARGS__)
 #define LD_SH4(...) LD_V4(v8i16, __VA_ARGS__)
+#define LD_SW4(...) LD_V4(v4i32, __VA_ARGS__)
 
 #define LD_V5(RTYPE, psrc, stride, out0, out1, out2, out3, out4)  \
 {                                                                 \
@@ -337,6 +340,7 @@
 #define LD_SB8(...) LD_V8(v16i8, __VA_ARGS__)
 #define LD_UH8(...) LD_V8(v8u16, __VA_ARGS__)
 #define LD_SH8(...) LD_V8(v8i16, __VA_ARGS__)
+#define LD_SW8(...) LD_V8(v4i32, __VA_ARGS__)
 
 #define LD_V16(RTYPE, psrc, stride,                                   \
                out0, out1, out2, out3, out4, out5, out6, out7,        \
@@ -1382,6 +1386,7 @@
             out4, out5, out6, out7);                              \
 }
 #define ILVR_B8_UH(...) ILVR_B8(v8u16, __VA_ARGS__)
+#define ILVR_B8_SW(...) ILVR_B8(v4i32, __VA_ARGS__)
 
 /* Description : Interleave right half of halfword elements from vectors
    Arguments   : Inputs  - in0, in1, in2, in3, in4, in5, in6, in7
